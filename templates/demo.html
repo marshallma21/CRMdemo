@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html style="height: 100%;">
+<head>
+    <meta charset="UTF-8">
+    <title>Record Viewer</title>
+    <style type="text/css">
+        #status{
+            position: absolute;
+            top: 60px;
+            left: 10px;
+            font-size: 9px;
+            color:white;
+        }
+        #presets_div {
+            position: absolute;
+            top: 10px;
+            left: 500px;
+            font-size: 9px;
+        }
+        #wrap{
+            padding-left: 250px;
+            padding-bottom: 200px;
+            height: 100%;
+        }
+        #record_options {
+            width: 200px;
+        }
+        .toppart{
+            /* margin-top:100px; */
+            /* padding-top: 10px; */
+            height: 70px;
+            width: 100%;
+            background-color:grey;
+        }
+        .leftpart{
+            float:left;
+            width:250px;
+            margin-left:-250px;
+            height: 500px;
+            overflow-y:auto;
+            background-color:lightblue;
+            text-align: center;
+        }
+        .rightpart{
+            float: right;
+            width: 100%;
+            height: 500px;
+            overflow:scroll
+        }
+        
+        .second select {
+            width:406px;
+            height:206px;
+            top:60px;
+            left:10px;
+            outline:none;
+            border:1px solid #999;
+            position:absolute;
+            z-index:9999;
+        }
+        .second input {
+            width:400px;
+            left:20px;
+            outline:none;
+            border:0pt;
+            line-height:20px;
+            height:20px;
+            border:1px solid #999;
+        }
+        .second ul {
+            position:absolute;
+            top:27px;
+            border:1px solid #999;
+            left:8px;
+            width:125px;
+            line-height:16px;
+        }
+        .ul li {
+            list-style:none;
+            width:161px;
+            /* left:15px;
+            */  
+            margin-left:-40px;
+            font-family:微软雅黑;
+            padding-left:4px;
+        }
+        .blue {
+            background:#1e91ff;
+        }
+
+    </style>
+    <script src="static/jquery.min.js"></script>
+    <script type="text/javascript" src="static/echarts.min.js"></script>
+  
+</head>
+<body style="height: 100%; overflow:hidden">
+    <div class="toppart">
+        <button id="btn_startSim" onclick="clearData();startSim()"> 开始生成模拟数据 </button> 
+        <button id="btn_clearData" onclick="clearData()"> 停止并清零 </button> 
+        
+        
+
+        <div id="status"></div>
+        <!-- <button onclick="loadRecord('data/record.00068')"> Load record </button> -->
+        <!-- <button onclick="loadChannelList()"> Load Channel List </button>
+        <button onclick="loadChannelSignal('/pilot/control/control_command')"> Load Channel List </button> -->
+    </div>
+ 
+    <div id="wrap">
+        <div id="list_panel" class="leftpart">
+            流失预测
+            <div id="pred" style="line-height: 300px; height:300px; width:100%; border-style: dashed; font-size: 50px; font-weight: bold; color: white;"></div>
+        </div>
+        <div id="grid" class="rightpart"></div>
+    </div>   
+
+<script>
+    var chart = echarts.init(document.getElementById('grid'), 'white', {renderer: 'canvas'});
+    var sName = [];
+    var xData = [];
+    var yData = [];
+    var channelList = [];
+    var channelMsgNum = [];
+    var sel_channel = "";
+
+    var axisPointer_opt;
+    var dataZoom_opt;
+    var grid_opt;
+    var xAxis_opt;
+    var yAxis_opt;
+    var series_opt;
+
+    var chartRendering = false;
+    var init_flag = true;
+    var window_height = document.body.clientHeight - 120;
+
+    var channel_option;
+
+    var intervalTask;
+
+    $(
+        function () {
+            fetchData(chart);
+            //setInterval(getDynamicData, 2000);
+        }  
+    );
+
+    function fetchData() {
+        $.ajax({
+            type: "GET",
+            url: "/initChart",
+            dataType: "json",
+            success: function (result) {
+                chart.setOption(result);
+                old_data = chart.getOption().series[0].data;
+            }
+        });
+    }
+
+    function startSim() {
+        intervalTask = setInterval(randomData, 2000);
+    }
+
+    function randomData() {
+        $.ajax({
+            type: "GET",
+            url: "/randomData",
+            dataType: "json",
+            success: function (response) {
+                console.log(response);
+                if(response.result == 'ok')
+                {
+                    if(response.predict == '0') 
+                    {
+                        $("#pred").html("Normal");
+                        $("#pred").css("background-color", "green");
+                    }
+                    else{
+                        $("#pred").html("Alert");
+                        $("#pred").css("background-color", "red");
+                        clearInterval(intervalTask);
+                    }
+                    clearChart();
+                    setCustomer('TEST');
+                }
+            }
+        });
+    }
+
+    function clearData() {
+        clearInterval(intervalTask);
+        $.ajax({
+            type: "GET",
+            url: "/clearData",
+            dataType: "json",
+            async: false,
+            success: function (response) {
+                console.log(response);
+                if(response.result == 'ok')
+                {
+                    clearChart();
+                }
+            }
+        });
+    }
+
+    function addSignal(signal_name) {
+        // console.log("Add Signal:"+signal_name);
+        $.ajax({
+            type: "GET",
+            url: "/addSignal/"+signal_name,
+            dataType: "json",
+            async: false,
+            success: function (response) {
+                // console.log(response);
+                if(response.result == 'ok')
+                {
+                    if(response.series_data.length > 0)
+                    {
+                        sName.push(response.signal_name);
+                        yData.push(response.series_data);
+                        
+                    }
+                }
+            }
+        });
+        
+    }
+
+
+    function setCustomer(customer_id) {
+        console.log("setCustomer:"+customer_id);
+        $.ajax({
+            type: "GET",
+            url: "/setCustomer/"+customer_id,
+            dataType: "json",
+            success: function (response) {
+                console.log(response);
+                signalList = ['标准化登录率', '标准化登录率_变化', '登录率_变化累计', '登录率波动性'];
+                for(i=0; i<signalList.length; i++)
+                {
+                    addSignal(signalList[i]);
+                }
+                updateChart();
+                resizeChart();
+            }
+        })
+
+    }
+
+
+    function delSignal(signal_name) {
+        // console.log("Del Signal:"+signal_name);
+        var signal_size = yData.length;
+        var i=0;
+        for(i; i<signal_size; i++)
+        {
+            if(series_opt[i].name == signal_name){
+                sName.splice(i,1);
+                // xData.splice(i,1);
+                yData.splice(i,1);
+                updateChart();
+                break;
+            }
+        }
+        if(i == signal_size)
+        {
+            $("#status").html("Signal not found "+ signal_name);
+        }
+    }
+
+    function clearChart() {
+        sName = [];
+        // xData = [];
+        yData = [];
+        updateChart();
+    }
+
+    function updateChart() {
+        chartRendering = true;
+        // console.log("Update chart");
+
+        signal_size = yData.length;
+        index_list = [];
+        for(i=0; i<signal_size; i++)
+        {
+            index_list.push(i);
+        }
+        
+        // console.log("Get options...");
+        opt = chart.getOption();
+        // axisPointer_opt = opt.axisPointer;
+        dataZoom_opt = opt.dataZoom;
+        grid_opt = opt.grid;
+        xAxis_opt = opt.xAxis;
+        yAxis_opt = opt.yAxis;
+        series_opt = opt.series;
+        tooltip_opt = opt.tooltip;
+
+        // console.log("Setting options...");
+        
+
+        grid_opt=[];
+        xAxis_opt = [];
+        yAxis_opt = [];
+        series_opt = [];
+        legend_opts = [];
+        dataZoom_opt = []
+
+        // console.log("Setting dataZoom...");
+
+
+        if (signal_size > 0)
+        {
+            chart_height = (window_height - 200) / signal_size;
+            dataZoom_opt = [
+                {
+                    show: true,
+                    realtime: true,
+                    start: 0,
+                    end: 100,
+                    top: 20,
+                    xAxisIndex: index_list
+                },
+                {
+                    type: 'inside',
+                    realtime: true,
+                    start: 0,
+                    end: 100,
+                    xAxisIndex: index_list
+                }
+            ];
+            tooltip_opt[0] = {
+                formatter: function (tooltip_data) {
+                    // console.log(tooltip_data)
+                    var res = tooltip_data[0].value[0] + '<br/>'
+                    for (var i = 0, length = tooltip_data.length; i < length; i++) {
+                        res += tooltip_data[i].marker + tooltip_data[i].seriesName + '：' + tooltip_data[i].value[1] + '<br/>'
+                    }
+                    return res
+                }
+            }
+        }
+
+        for(i=0; i<signal_size; i++)
+        {
+            
+            // console.log("Setting grid...");
+            grid_opt.push(
+                {
+                    left: 60,
+                    right: 50,
+                    top: (chart_height + 10) * i + 100,
+                    height: chart_height - 10,
+                }
+            );
+            
+            // console.log("Setting xAxis...");
+            xAxis_opt.push(
+                {
+                    gridIndex: i,
+                    type: 'time',
+                    boundaryGap: false,
+                    axisLabel: {
+                        show: false,
+                    },
+                    // data: xData[i],
+                }
+            );
+            
+            // console.log("Setting yAxis...");
+            yAxis_opt.push(
+                {
+                    gridIndex: i,
+                    // name: sName[i],
+                    type: 'value',
+                    axisPointer: {show:false},
+                    min: 'dataMin',
+                    max: 'dataMax',
+                }
+            );
+
+            // console.log("Setting series...");
+            series_opt.push(
+                {
+                    name: sName[i],
+                    type: 'line',
+                    xAxisIndex: i,
+                    yAxisIndex: i,
+                    symbolSize: 3,
+                    // prettier-ignore
+                    data: yData[i],
+                    step: true,
+                }
+            );
+            if(legend_opts.length > 0)
+            {
+                legend_pos = legend_opts[legend_opts.length-1].left + 100 + legend_opts[legend_opts.length-1].data[0].length*6
+            }
+            else
+            {
+                legend_pos = 50;
+            }
+            legend_opts.push(
+                {
+                    data: [sName[i]],
+                    left: legend_pos,
+                    top: 60,
+                }
+            );
+        }
+        // console.log("Updating options...");
+        opt.dataZoom = dataZoom_opt;
+        opt.grid = grid_opt;
+        opt.xAxis = xAxis_opt;
+        opt.yAxis = yAxis_opt;
+        opt.series = series_opt;
+        opt.legend = legend_opts;
+        opt.animationDuration = 100; 
+
+        // console.log("Re-draw chart...");
+        chart.setOption(opt, true);
+        
+    }
+
+    function resizeChart() {
+        // console.log('resize');
+        chart.resize();
+        window_height = document.body.clientHeight - 90;
+        $('#list_panel').css({"height": window_height + "px"});
+        $('#grid').css({"height": window_height + "px"});
+    }
+
+    window.onresize = function(){
+        resizeChart();
+    }
+    
+    $(document).ready(function(){
+        //updateChart();
+
+        resizeChart();
+
+    });
+
+    chart.on('finished',_=>{
+        this.isLoading = true;
+    })
+
+</script>
+</body>
+</html>
